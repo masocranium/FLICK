@@ -1,11 +1,12 @@
 # Feature schema
 
-The input is a table with one row per pointer movement. This package doesn't record
-pointers or compute features: you supply the table. This page defines what each column
-should mean so your extractor produces something the defaults fit correctly.
+A feature table has one row per pointer movement. `flick extract` produces one from a
+[recording](recording.md), computing each column as defined here. If you have your own
+pointer data, you can supply your own table instead, as long as the columns mean the
+same thing.
 
-You don't have to use these columns. `GaussianCopula.fit` accepts any table, and only
-the `MovementSampler` class needs `distance_px` and `duration_s`.
+Models need `distance_px`, and `ClickGenerator` needs `duration_s`. Beyond that you can
+fit whichever columns you like.
 
 ## Default columns
 
@@ -49,13 +50,13 @@ Calculate them from a drawn row instead:
 
 ```python
 import numpy as np
-from norta_copula import MovementSampler, fit_mouse_copula, make_demo_features
+from flick import ClickGenerator, CopulaModel, DEFAULT_COLUMNS, make_demo_features
 
-copula = fit_mouse_copula(make_demo_features(300), rng=np.random.default_rng(0))
-movement = MovementSampler(copula, rng=np.random.default_rng(1)).draw(250.0)
+model = CopulaModel.fit(make_demo_features(300), DEFAULT_COLUMNS, rng=np.random.default_rng(0))
+click = ClickGenerator(model, np.random.default_rng(1)).generate((0, 0), (150, 200))
 
-path_length_px = movement.distance_px / movement.get("straightness")
-v_mean = path_length_px / movement.duration_s
+path_length_px = click.distance_px / click.get("straightness")
+v_mean = path_length_px / click.duration_s
 print(round(path_length_px, 1), round(v_mean, 1))
 ```
 
@@ -69,9 +70,9 @@ amplifies noise with each derivative. A workable approach:
 2. Smooth **position** with a Gaussian.
 3. Only then differentiate to get speed, acceleration and jerk.
 
-The model this package was developed with used these values:
+`flick extract` does this, with these defaults:
 
-| Parameter | Value | Affects |
+| Parameter | Default | Affects |
 |---|---|---|
 | Resampling rate | 200 Hz | All kinematic columns |
 | Position smoothing, sigma | 12 ms | `jerk_rms`, `accel_peak`, `decel_peak`, `n_submovements` |
@@ -86,8 +87,8 @@ The smoothing width matters a lot. In one recording, moving it from 6 ms to 45 m
 
 **Never pool rows extracted with different parameters.** A `jerk_rms` at 6 ms and one at
 12 ms aren't the same quantity, and pooling them produces a bimodal marginal that's pure
-artifact. Keep the parameters with the data: the JSONL header's `extract_params` is carried
-into any model fitted through the CLI.
+artifact. `flick extract` stores the parameters in the file's header, and a copula fitted
+through the CLI carries them along.
 
 ## What a recording can't tell you
 
@@ -128,7 +129,8 @@ Two optional columns select which rows to fit:
 
 - **`activity`** is a free-form label for the task. Different tasks have different target
   sizes, distances and urgency, so fit them separately.
-- **`kind`** is a free-form label for the type of movement, such as `click` or `drift`.
+- **`kind`** is the type of movement. `flick extract` writes `click`, `drift`, `drag` or
+  `excursion`. Fit on `click`.
 
 ### Missing values
 

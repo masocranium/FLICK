@@ -7,7 +7,7 @@ import math
 import numpy as np
 import pytest
 
-from norta_copula import metrics
+from flick import metrics
 
 
 def test_energy_distance_is_zero_for_identical_samples():

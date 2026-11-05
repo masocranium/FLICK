@@ -1,154 +1,179 @@
-# norta-copula
+# FLICK
 
-Fit a joint distribution to recorded mouse-movement features, then generate new
-movement feature vectors from it, optionally conditioned on how far the cursor
-has to travel.
+**Feature-Level Imitation of Cursor Kinematics.** Record mouse movements, fit a model
+of them, and generate synthetic movement data for a given cursor position and click
+target.
 
-Each feature keeps its own distribution, and a Gaussian copula couples them.
-Sampling uses NORTA ("NORmal To Anything"). The package is built for what
-movement data is actually like: a few hundred rows of skewed, bounded,
-zero-inflated and integer-valued columns. It needs only NumPy.
+```bash
+flick record --activity "photo editing"     # 1. record your pointer (X11)
+flick extract                               # 2. turn the recording into a feature table
+flick fit --kind click --out my.model.json  # 3. fit a model, and see how good it is
+
+# 4. generate data for a cursor at (100, 200) and a target at (640, 360)
+flick generate my.model.json --from 100,200 --to 640,360    # features, as CSV
+flick path     my.model.json --from 100,200 --to 640,360    # (t, x, y) points, as CSV
+flick view     my.model.json --from 100,200 --to 640,360 --open    # see them in a browser
+```
+
+FLICK produces **data**. It writes numbers to a file or a page, or returns arrays, and has
+no way to move a cursor or send input to anything.
+
+## How it works
+
+```
+pointer -> raw session -> movements -> features -> model -> features -> trajectory
+          flick record   flick extract           flick fit  flick generate  flick path
+```
+
+The core idea is that a movement is summarized by a row of features: how long it took,
+how straight it was, when it peaked, how many corrections it made. A model learns how
+those features vary together given the **distance** to travel. Your position and target
+fix that distance, the model draws the rest, and the path generator builds a trajectory
+to match.
+
+## Swap in your own model
+
+Anything that predicts features from distance can be a model. Two are built in:
+
+| Model | Approach | Trade-off |
+|---|---|---|
+| `copula` (default) | NORTA Gaussian copula | Generalizes past recorded values and works at small sample sizes, but dependence is limited to a Gaussian structure |
+| `knn` | Resamples recorded rows of a similar distance | Assumes almost nothing, but can only repeat what it has seen, and doesn't extrapolate |
+
+Choose one with `flick fit --model knn`. Everything downstream works the same, because a
+saved model records its own type. Adding your own takes four methods:
 
 ```python
 import numpy as np
-from norta_copula import MovementSampler, fit_mouse_copula, make_demo_features
+from flick import ClickGenerator, DEFAULT_COLUMNS, MovementModel, make_demo_features, register_model
 
-data = make_demo_features(n=400)        # fabricated; replace with your own table
-copula = fit_mouse_copula(data, rng=np.random.default_rng(0))
 
-sampler = MovementSampler(copula, rng=np.random.default_rng(1))
-movement = sampler.draw(distance_px=250)
+@register_model
+class MeanModel(MovementModel):
+    """Every feature at its mean, ignoring distance."""
 
-print(round(movement.duration_s, 3), round(movement.get("straightness"), 3))
+    name = "mean"
+
+    def __init__(self, columns, means):
+        self.columns, self.means = list(columns), list(means)
+
+    @classmethod
+    def fit(cls, data, columns, bounds=None, rng=None, **options):
+        return cls(columns, np.mean(data, axis=0).tolist())
+
+    def sample(self, distance_px, n=1, rng=None):
+        out = {c: np.full(n, m) for c, m in zip(self.columns, self.means)}
+        out["distance_px"] = np.full(n, float(distance_px))
+        return out
+
+    def to_json(self):
+        return {"columns": self.columns, "means": self.means}
+
+    @classmethod
+    def from_json(cls, data):
+        return cls(data["columns"], data["means"])
+
+
+model = MeanModel.fit(make_demo_features(100), DEFAULT_COLUMNS)
+path = ClickGenerator(model, np.random.default_rng(0)).generate_path((100, 200), (640, 360))
+print(path.t[-1], path.x[-1], path.y[-1])
 ```
 
-> **What you get is a feature vector, not a cursor path.** A draw says "this
-> movement takes 0.8 s, peaks at 680 px/s, and has two corrections". It does not
-> contain (x, y, t) points. Turning a vector into a path is up to you, and is not
-> part of this package. Nor is recording or feature extraction: the input is a
-> table you already have ([schema](docs/feature-schema.md)).
-
-## Why not just sample each feature independently?
-
-Independent draws lose the correlations, and those describe how a movement hangs
-together: long moves are faster at peak, and careful approaches are slow and
-straight. Independent sampling can produce a movement that is both hurried and
-surgically precise.
-
-A multivariate Gaussian keeps correlations but forces every feature to be
-Gaussian. Here is the result on the [demo data](#try-it), from 20,000 draws of 14
-columns:
-
-| Model | Impossible values |
-|---|---|
-| Multivariate Gaussian | 37,958 (13.6%): negative durations, straightness above 1 |
-| This copula | 0 |
-
-The copula gets zero by construction, not by clipping: each marginal is fitted in
-a transformed space where out-of-bounds values cannot be reached.
-
-## What it handles
-
-| Column shape | Example | Fitted as |
-|---|---|---|
-| Positive, skewed | `duration_s` | KDE in log space |
-| Bounded (0, 1) | `straightness` | KDE in logit space |
-| All negative | `decel_peak` | KDE in negated-log space |
-| Signed, unbounded | `max_dev_px` | KDE, untransformed |
-| Integer counts | `n_submovements` | Empirical PMF |
-| Mostly zero, with a tail | `overshoot_px` | Hurdle: a point mass plus a KDE |
-| Never varies | a count that is always 0 | Constant |
-
-On top of the marginals, a fit also:
-
-- **Corrects attenuated correlations.** Ties in count and hurdle columns bias
-  estimated correlations toward zero. NORTA correlation matching finds the latent
-  correlation that reproduces the observed rank correlation.
-- **Shrinks noisy ones.** The Ledoit-Wolf intensity is estimated from your data,
-  so weak correlations shrink hard and strong ones barely move.
-- **Stays sampleable.** Higham's nearest-correlation projection repairs the matrix
-  when calibration makes it indefinite.
-- **Conditions in closed form.** `sample_conditional` draws any columns given any
-  others.
-
-[docs/theory.md](docs/theory.md) has the derivations.
+[docs/models.md](docs/models.md) covers the contract, using a custom model from the
+command line, and comparing models.
 
 ## Install
 
-The package isn't on PyPI. Install from a clone, using Python 3.10 or later:
+FLICK isn't on PyPI. Install from a clone, using Python 3.10 or later:
 
 ```bash
-pip install -e .          # add ".[dev]" to run the tests
+pip install -e .              # fitting and generating; needs only NumPy
+pip install -e ".[record]"    # also recording, which needs python-xlib
+pip install -e ".[dev]"       # also the test suite
 ```
 
-## Try it
+## Try it without recording
 
-No recording is needed. `demo-data` writes a table of **fabricated** features with
-the same awkward shapes as real ones:
+`demo-data` writes a table of **fabricated** features:
 
 ```bash
-norta-copula demo-data demo.csv
-norta-copula fit demo.csv --condition distance_px=250 --out demo.model.json
-norta-copula sample demo.model.json -n 3 --given distance_px=250
+flick demo-data demo.csv
+flick fit demo.csv --out demo.model.json
+flick path demo.model.json --from 100,200 --to 640,360 --seed 1
 ```
 
-`fit` prints a full report. The first number to read is the cross-validated score
-against its noise floor:
-
 ```
-Cross-validation (5 folds, ~320 train / 80 test):
-  fold    copula vs held-out    real vs held-out
-     1                0.1345              0.1114
-     ...
-median                0.1345              0.1009   <- TRUST THIS ROW
+movement,t,x,y
+0,0.000000,100,200
+0,0.069163,108,202
+0,0.096370,118,203
+...
+0,0.916473,640,360
 ```
 
-The demo scores 1.33x the floor: close, but with detectable structure left over.
-That's expected, because the demo data was not generated by a Gaussian copula.
-[docs/evaluation.md](docs/evaluation.md) explains how to read the rest.
+To see those paths, run `flick view demo.model.json --from 100,200 --to 640,360 --open`. It
+writes a self-contained page with the paths on screen, a real-speed replay, speed curves, and
+a table of what the model asked for against what each path has. Add `--real data/` to overlay
+your own recorded clicks. See [docs/paths.md](docs/paths.md#seeing-them).
 
-Demo numbers show that the code works. They say nothing about how well the model
-fits real people, so run it on your own data to find out.
+Demo numbers show that the code works. They say nothing about how well a model fits real
+people.
 
-## Use your own data
+## How good is it?
 
-Give it a CSV or JSONL table with one row per movement and the
-[documented columns](docs/feature-schema.md). Fit one model per activity, because
-different tasks have different distributions, and aim for about 10x as many rows
-as columns (about 140 for the default 14).
+`flick fit` reports a cross-validated score against a noise floor, for any model.
+[docs/evaluation.md](docs/evaluation.md) explains how to read it.
 
-```bash
-norta-copula fit features.jsonl --activity "photo editing" --kind click --out my.model.json
-```
+The two kinds of output have very different accuracy, and it's important to know which
+you're getting. On one real recording of 196 clicks, using energy distance to the real
+rows, where lower is better and real data split against itself had a 95th percentile of
+0.26:
 
-**Treat fitted models as private.** Mouse dynamics are an identifying biometric,
-and a saved model contains its [training rows, in order](docs/model-format.md).
-The `.gitignore` here excludes `data/`, `models/` and `*.model.json`.
+| Output | Distance to real features |
+|---|---|
+| `flick generate`: drawn features, in-sample | 0.10 |
+| `flick path`: paths, measured back through the feature extractor | 1.15 |
+
+**Generated features fit well. Trajectories fit noticeably worse.** The path generator
+honours only some drawn features, and the rest emerge from its random walk. See
+[docs/paths.md](docs/paths.md#how-close-paths-get) for the column-by-column detail.
 
 ## Limitations
 
-- **Movements are independent.** Each draw knows nothing about the one before it,
-  so there is no rhythm, fatigue or sequence structure.
-- **Dependence is Gaussian.** A Gaussian copula has no tail dependence and treats
-  both tails alike, so extreme values in two columns co-occur less than they may
-  in reality.
+- **Recording is X11 only.** That includes WSLg and XWayland. Other platforms need a
+  `PointerSource` implementation, or a feature table from elsewhere.
+- **Movements are independent.** Each draw knows nothing about the one before it, so
+  there is no rhythm, fatigue or sequence structure.
 - **A model describes one person, one mouse, one DPI, and one set of extraction
-  parameters.** It doesn't transfer between them, and rows extracted with different
-  parameters must not be pooled.
-- **Matching these features doesn't make generated input indistinguishable from a
-  person's.** The model reproduces summary distributions of individual movements,
-  and that's all it has been measured on.
+  parameters.** It doesn't transfer between them.
+- **Trajectories are approximate**, as above.
+- **Synthetic data isn't indistinguishable from real data.** It reproduces summary
+  distributions of individual movements, and that's all it has been measured on.
+
+## Privacy
+
+Mouse dynamics are an identifying biometric, so treat this data with care:
+
+- **The recorder captures the pointer and mouse buttons across the whole display.** It
+  never reads the keyboard. Only record yourself, or people who have agreed to it.
+- **Saved models contain their training rows.** A [model file](docs/model-format.md) is
+  as sensitive as the recording it came from.
+- **So do pages with an overlay.** `flick view --real` embeds the recorded movements.
+- The `.gitignore` here excludes `data/`, `models/`, `*.model.json` and `*.view.html`.
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| [docs/theory.md](docs/theory.md) | The model, the algorithms and why each exists, with references |
-| [docs/feature-schema.md](docs/feature-schema.md) | Every column's definition and the input file formats |
+| [docs/recording.md](docs/recording.md) | Recording, segmentation and feature extraction |
+| [docs/feature-schema.md](docs/feature-schema.md) | Every column's definition and the file formats |
+| [docs/models.md](docs/models.md) | The model contract, and writing your own |
+| [docs/paths.md](docs/paths.md) | How trajectories are built, and how close they get |
+| [docs/evaluation.md](docs/evaluation.md) | How to tell whether a model is any good |
+| [docs/theory.md](docs/theory.md) | The mathematics of the default copula model |
 | [docs/api.md](docs/api.md) | Python API reference |
 | [docs/cli.md](docs/cli.md) | Command line reference |
-| [docs/evaluation.md](docs/evaluation.md) | How to tell whether a fit is any good |
-| [docs/model-format.md](docs/model-format.md) | The saved JSON format and its privacy implications |
+| [docs/model-format.md](docs/model-format.md) | The saved model format |
 
 ## Development
 
@@ -157,5 +182,5 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The suite takes about a minute, because the correlation-matching tests run real
-Monte Carlo. `tests/test_docs.py` executes the Python examples in these documents.
+The pipeline tests run on synthetic pointer streams, so they need no display.
+`tests/test_docs.py` runs the Python examples in these documents.

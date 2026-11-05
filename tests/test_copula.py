@@ -17,8 +17,8 @@ import math
 import numpy as np
 import pytest
 
-from norta_copula import copula as cop
-from norta_copula.copula import (
+from flick import copula as cop
+from flick.copula import (
     MIN_ATOM_COUNT,
     ConstantMarginal,
     DiscreteMarginal,
@@ -32,8 +32,8 @@ from norta_copula.copula import (
     nearest_psd,
     shrink_correlation,
 )
-from norta_copula.copula import GaussianCopula as _GaussianCopula
-from norta_copula.mouse import FEATURE_BOUNDS
+from flick.copula import GaussianCopula as _GaussianCopula
+from flick.schema import FEATURE_BOUNDS
 
 
 def choose_marginal(v, name="", **kw):

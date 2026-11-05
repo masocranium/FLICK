@@ -7,7 +7,7 @@ Anything", Cario and Nelson, 1997): draw correlated standard normals, map them
 to uniforms, push each through its column's inverse CDF.
 
 Nothing in this module knows what the columns mean. Physical bounds are passed
-to `GaussianCopula.fit`; the mouse-movement schema lives in `mouse.py`. The
+to `GaussianCopula.fit`; the mouse-movement schema lives in `schema.py`. The
 derivations are in docs/theory.md.
 
 WHY NOT A MULTIVARIATE GAUSSIAN

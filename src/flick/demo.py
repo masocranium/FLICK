@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .mouse import DEFAULT_COLUMNS
+from .schema import DEFAULT_COLUMNS
 
 
 def make_demo_features(n: int = 400, seed: int = 0) -> np.ndarray:
@@ -73,7 +73,7 @@ def make_demo_features(n: int = 400, seed: int = 0) -> np.ndarray:
 
 
 def write_demo_csv(path, n: int = 400, seed: int = 0) -> Path:
-    """Write `make_demo_features` as a CSV `norta-copula fit` can read."""
+    """Write `make_demo_features` as a CSV `flick fit` can read."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = make_demo_features(n, seed)

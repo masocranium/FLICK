@@ -1,7 +1,9 @@
 # Theory
 
-How the model works, and why each piece exists. It assumes you're comfortable with
-probability and linear algebra, but not that you've met copulas before.
+How FLICK's default model works, and why each piece exists. It assumes you're
+comfortable with probability and linear algebra, but not that you've met copulas
+before. For other models, see [models.md](models.md). For trajectories, see
+[paths.md](paths.md).
 
 ## The problem
 
