@@ -1,0 +1,81 @@
+"""A NORTA Gaussian copula for generating synthetic mouse-movement features."""
+
+from .copula import (
+    ConstantMarginal,
+    DiscreteMarginal,
+    GaussianCopula,
+    HurdleMarginal,
+    KDEMarginal,
+    Marginal,
+    calibrate_correlation,
+    calibrate_pair,
+    choose_marginal,
+    ledoit_wolf_intensity,
+    marginal_from_json,
+    nearest_correlation,
+    nearest_psd,
+    shrink_correlation,
+    spearman,
+)
+from .demo import make_demo_features, write_demo_csv
+from .metrics import (
+    FeatureGap,
+    Standardizer,
+    energy_distance,
+    feature_gaps,
+    noise_floor,
+    wasserstein1,
+)
+from .mouse import (
+    DEFAULT_COLUMNS,
+    DISTANCE_COLUMN,
+    FEATURE_BOUNDS,
+    MovementSampler,
+    MovementSpec,
+    fit_mouse_copula,
+    read_rows,
+    select_rows,
+    to_matrix,
+)
+from .validation import BoundsReport, check_bounds, cross_validate, gaussian_baseline
+
+__version__ = "0.1.0"
+
+__all__ = [
+    "BoundsReport",
+    "ConstantMarginal",
+    "DEFAULT_COLUMNS",
+    "DISTANCE_COLUMN",
+    "DiscreteMarginal",
+    "FEATURE_BOUNDS",
+    "FeatureGap",
+    "GaussianCopula",
+    "HurdleMarginal",
+    "KDEMarginal",
+    "Marginal",
+    "MovementSampler",
+    "MovementSpec",
+    "Standardizer",
+    "calibrate_correlation",
+    "calibrate_pair",
+    "check_bounds",
+    "choose_marginal",
+    "cross_validate",
+    "energy_distance",
+    "feature_gaps",
+    "fit_mouse_copula",
+    "gaussian_baseline",
+    "ledoit_wolf_intensity",
+    "make_demo_features",
+    "marginal_from_json",
+    "nearest_correlation",
+    "nearest_psd",
+    "noise_floor",
+    "read_rows",
+    "select_rows",
+    "shrink_correlation",
+    "spearman",
+    "to_matrix",
+    "wasserstein1",
+    "write_demo_csv",
+]

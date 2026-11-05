@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+build/
+dist/
+
+# Recordings and everything derived from them. Mouse dynamics are an identifying
+# biometric, and a fitted model file contains its training rows
+# (docs/model-format.md), so none of this belongs in version control.
+data/
+models/
+*.raw.jsonl
+*.model.json
